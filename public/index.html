@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Secure Budget Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Secure Budget Dashboard</h1>
+      <p class="subtitle">
+        Security-first starter for personal budgeting with Plaid Link.
+      </p>
+
+      <section id="security-panel" class="panel">
+        <h2>Security defaults</h2>
+        <ul>
+          <li>No bank credentials are entered in this app (Plaid Link only).</li>
+          <li>Plaid secrets stay server-side and are loaded from environment variables.</li>
+          <li>Access tokens are encrypted in memory and never written to disk.</li>
+          <li>No raw transaction or account/routing numbers are persisted by this app.</li>
+        </ul>
+      </section>
+
+      <section id="auth-panel" class="panel">
+        <h2>Sign in</h2>
+        <form id="login-form">
+          <label for="password">Admin password</label>
+          <input id="password" name="password" type="password" minlength="12" required />
+          <button type="submit">Sign in</button>
+        </form>
+      </section>
+
+      <section id="dashboard-panel" class="panel hidden">
+        <div class="dashboard-header">
+          <h2>Dashboard</h2>
+          <button id="logout-button" class="secondary">Log out</button>
+        </div>
+        <p id="connection-state">Not connected to Plaid.</p>
+
+        <div class="actions">
+          <button id="connect-button">Connect bank</button>
+          <button id="refresh-button" class="secondary">Refresh balances</button>
+          <button id="disconnect-button" class="danger">Disconnect</button>
+        </div>
+
+        <table id="accounts-table" class="hidden">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Type</th>
+              <th>Available</th>
+              <th>Current</th>
+            </tr>
+          </thead>
+          <tbody id="accounts-tbody"></tbody>
+        </table>
+      </section>
+
+      <p id="status-message" aria-live="polite"></p>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
