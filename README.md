@@ -8,6 +8,7 @@ This repository is a **security-first starter** for a simple YNAB-style dashboar
 - Exchanges Plaid `public_token` server-side
 - Retrieves account balances for dashboard display
 - Allows disconnecting the linked Plaid item
+- Supports OAuth redirect resume for institutions that require OAuth
 
 ## Security model (important)
 
@@ -53,10 +54,11 @@ This starter is intentionally opinionated:
 4. Generate a token encryption key:
 
    ```bash
-   openssl rand -base64 32
+   node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
    ```
 
 5. Fill `.env` with your Plaid values and generated secrets.
+   - If `PLAID_ENV=production`, set `PLAID_REDIRECT_URI` to your public HTTPS app URL and register it in Plaid Dashboard.
 
 6. Run the app:
 
@@ -75,7 +77,8 @@ This starter is intentionally opinionated:
 - `GET /api/auth/session` – check session auth state
 - `POST /api/auth/login` – authenticate dashboard user
 - `POST /api/auth/logout` – destroy local session
-- `GET /api/plaid/link-token` – mint Plaid Link token (authenticated only)
+- `GET /api/plaid/link-token` – mint a fresh Plaid Link token (authenticated only)
+- `GET /api/plaid/link-token?resume=true` – return the in-session token needed for OAuth redirect resume
 - `POST /api/plaid/exchange-public-token` – exchange `public_token` for access token (authenticated only)
 - `POST /api/plaid/disconnect` – remove Plaid item and forget token (authenticated only)
 - `GET /api/dashboard` – retrieve masked account balance data (authenticated only)

@@ -37,6 +37,19 @@ if (tokenKey.length !== 32) {
   process.exit(1);
 }
 
+if (env.PLAID_ENV === "production") {
+  if (!env.PLAID_REDIRECT_URI) {
+    console.error("PLAID_REDIRECT_URI is required when PLAID_ENV=production.");
+    process.exit(1);
+  }
+
+  const redirectUriProtocol = new URL(env.PLAID_REDIRECT_URI).protocol;
+  if (redirectUriProtocol !== "https:") {
+    console.error("PLAID_REDIRECT_URI must use https:// in production.");
+    process.exit(1);
+  }
+}
+
 export const config = {
   nodeEnv: env.NODE_ENV,
   isProduction: env.NODE_ENV === "production",

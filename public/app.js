@@ -9,6 +9,7 @@ const statusMessage = document.querySelector("#status-message");
 const connectionState = document.querySelector("#connection-state");
 const accountsTable = document.querySelector("#accounts-table");
 const accountsTableBody = document.querySelector("#accounts-tbody");
+const OAUTH_STATE_ID_QUERY_PARAM = "oauth_state_id";
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -89,15 +90,26 @@ async function refreshDashboard() {
   }
 }
 
-async function openPlaidLink() {
+function clearOauthQueryStateFromUrl() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(OAUTH_STATE_ID_QUERY_PARAM)) {
+    return;
+  }
+
+  url.searchParams.delete(OAUTH_STATE_ID_QUERY_PARAM);
+  window.history.replaceState({}, document.title, url.toString());
+}
+
+async function startPlaidLink({ isOauthResume, receivedRedirectUri }) {
   if (!window.Plaid) {
     setStatus("Plaid Link failed to load.", true);
     return;
   }
 
   try {
-    const { linkToken } = await api("/api/plaid/link-token", { method: "GET" });
-    const handler = window.Plaid.create({
+    const endpoint = isOauthResume ? "/api/plaid/link-token?resume=true" : "/api/plaid/link-token";
+    const { linkToken } = await api(endpoint, { method: "GET" });
+    const plaidConfig = {
       token: linkToken,
       onSuccess: async (publicToken) => {
         try {
@@ -105,21 +117,56 @@ async function openPlaidLink() {
             method: "POST",
             body: JSON.stringify({ publicToken })
           });
-          setStatus("Bank connected securely through Plaid.");
+          clearOauthQueryStateFromUrl();
+          setStatus(
+            isOauthResume
+              ? "OAuth resume complete. Bank connected securely."
+              : "Bank connected securely through Plaid."
+          );
           await refreshDashboard();
         } catch (error) {
           setStatus(error.message, true);
         }
       },
       onExit: () => {
+        clearOauthQueryStateFromUrl();
         setStatus("Plaid Link closed.");
       }
-    });
+    };
 
+    if (receivedRedirectUri) {
+      plaidConfig.receivedRedirectUri = receivedRedirectUri;
+    }
+
+    const handler = window.Plaid.create(plaidConfig);
     handler.open();
   } catch (error) {
+    if (isOauthResume) {
+      clearOauthQueryStateFromUrl();
+    }
     setStatus(error.message, true);
   }
+}
+
+async function openPlaidLink() {
+  await startPlaidLink({
+    isOauthResume: false,
+    receivedRedirectUri: undefined
+  });
+}
+
+async function maybeResumePlaidOauth() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(OAUTH_STATE_ID_QUERY_PARAM)) {
+    return false;
+  }
+
+  setStatus("Resuming Plaid OAuth...");
+  await startPlaidLink({
+    isOauthResume: true,
+    receivedRedirectUri: window.location.href
+  });
+  return true;
 }
 
 async function disconnectPlaid() {
@@ -176,6 +223,10 @@ async function init() {
     const { authenticated } = await api("/api/auth/session", { method: "GET" });
     setAuthenticated(authenticated);
     if (authenticated) {
+      const resumedOauth = await maybeResumePlaidOauth();
+      if (resumedOauth) {
+        return;
+      }
       await refreshDashboard();
     }
   } catch (error) {

@@ -25,6 +25,7 @@ const publicDir = path.join(__dirname, "..", "public");
 
 const SESSION_COOKIE_NAME = "secure_budget_sid";
 const sessionStore = new Map();
+const PLAID_LINK_TOKEN_TTL_MS = 4 * 60 * 60 * 1000;
 
 const cookieOptions = {
   httpOnly: true,
@@ -41,6 +42,10 @@ const loginBodySchema = z.object({
 
 const exchangeBodySchema = z.object({
   publicToken: z.string().min(1).max(512)
+});
+
+const linkTokenQuerySchema = z.object({
+  resume: z.enum(["true", "false"]).optional()
 });
 
 app.disable("x-powered-by");
@@ -124,6 +129,8 @@ function createFreshSession() {
     authenticated: false,
     encryptedAccessToken: undefined,
     itemId: undefined,
+    plaidLinkToken: undefined,
+    plaidLinkTokenCreatedAt: undefined,
     createdAt: now,
     expiresAt: now + config.sessionTtlMs
   };
@@ -191,6 +198,24 @@ function cleanupExpiredSessions() {
 }
 
 setInterval(cleanupExpiredSessions, 5 * 60 * 1000).unref();
+
+function hasLivePlaidLinkToken(session) {
+  return Boolean(
+    session.plaidLinkToken &&
+      session.plaidLinkTokenCreatedAt &&
+      Date.now() - session.plaidLinkTokenCreatedAt <= PLAID_LINK_TOKEN_TTL_MS
+  );
+}
+
+function savePlaidLinkToken(session, linkToken) {
+  session.plaidLinkToken = linkToken;
+  session.plaidLinkTokenCreatedAt = Date.now();
+}
+
+function clearPlaidLinkToken(session) {
+  session.plaidLinkToken = undefined;
+  session.plaidLinkTokenCreatedAt = undefined;
+}
 
 function withSession(req, res, next) {
   req.sessionData = getOrCreateSession(req, res);
@@ -264,12 +289,33 @@ app.get(
   "/api/plaid/link-token",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const parsedQuery = linkTokenQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) {
+      return res.status(400).json({ error: "Invalid link token request." });
+    }
+
+    const isResumeRequest = parsedQuery.data.resume === "true";
+    if (isResumeRequest) {
+      if (!hasLivePlaidLinkToken(req.sessionData)) {
+        clearPlaidLinkToken(req.sessionData);
+        return res
+          .status(409)
+          .json({ error: "OAuth session expired. Start a new Plaid connection." });
+      }
+
+      return res.json({
+        linkToken: req.sessionData.plaidLinkToken,
+        resumed: true
+      });
+    }
+
     const linkToken = await createPlaidLinkToken(plaidClient, {
       userId: req.sessionData.id,
       redirectUri: config.plaidRedirectUri
     });
+    savePlaidLinkToken(req.sessionData, linkToken);
 
-    return res.json({ linkToken });
+    return res.json({ linkToken, resumed: false });
   })
 );
 
@@ -286,6 +332,7 @@ app.post(
     const { accessToken, itemId } = await exchangePublicToken(plaidClient, parsed.data.publicToken);
     req.sessionData.encryptedAccessToken = encryptSecret(accessToken, config.tokenEncryptionKey);
     req.sessionData.itemId = itemId;
+    clearPlaidLinkToken(req.sessionData);
 
     return res.json({ connected: true });
   })
@@ -309,6 +356,7 @@ app.post(
 
     req.sessionData.encryptedAccessToken = undefined;
     req.sessionData.itemId = undefined;
+    clearPlaidLinkToken(req.sessionData);
     return res.json({ connected: false });
   })
 );
